@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<link rel="manifest" href="manifest.json">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nim Game Ultimate</title>
+
+<style>
+body {
+  font-family: system-ui, sans-serif;
+  background: #f2f2f2;
+  margin: 0;
+  padding: 10px;
+  text-align: center;
+}
+
+h1 { margin: 5px 0; }
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  margin-bottom: 10px;
+}
+
+select, button, input {
+  font-size: 14px;
+  padding: 5px 8px;
+}
+
+.piles {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.pile {
+  background: white;
+  border-radius: 10px;
+  padding: 10px;
+  width: 130px;
+}
+
+.stones {
+  font-size: 22px;
+  user-select: none;
+}
+
+.stone {
+  cursor: pointer;
+}
+
+.stone.selected {
+  color: red;
+}
+
+#message {
+  margin-top: 10px;
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.win {
+  animation: win 0.6s ease-in-out infinite alternate;
+}
+
+@keyframes win {
+  from { transform: scale(1); }
+  to { transform: scale(1.1); color: gold; }
+}
+
+#stats {
+  font-size: 14px;
+  margin-top: 4px;
+}
+</style>
+</head>
+
+<body>
+
+<h1>ニムゲーム Ultimate</h1>
+
+<div class="controls">
+  <select id="mode">
+    <option value="cpu">VS CPU</option>
+    <option value="pvp">2人対戦</option>
+  </select>
+
+  <select id="difficulty">
+    <option value="easy">CPU：弱い</option>
+    <option value="hard">CPU：強い</option>
+  </select>
+
+  <select id="rule">
+    <option value="normal">通常ニム</option>
+    <option value="misere">ミゼール</option>
+  </select>
+
+  <input id="pileCount" type="number" min="1" max="10" value="3">
+  <input id="maxStone" type="number" min="1" max="10" value="5">
+
+  <select id="initMode">
+    <option value="manual">手動</option>
+    <option value="random">ランダム</option>
+  </select>
+
+  <button onclick="resetGame()">🔁 リスタート</button>
+</div>
+
+<div class="piles" id="piles"></div>
+
+<div id="message"></div>
+<div id="stats"></div>
+
+<audio id="takeSound" src="https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg"></audio>
+<audio id="winSound" src="https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg"></audio>
+
+<script>
+let piles = [];
+let player = 1;
+let selected = null;
+let selectedPile = null;
+let dragging = false;
+
+let stats = JSON.parse(localStorage.getItem("nimStats")) || { win: 0, lose: 0 };
+
+function updateStats() {
+  document.getElementById("stats").textContent =
+    `勝ち: ${stats.win} / 負け: ${stats.lose}`;
+}
+
+function createPiles() {
+  const count = +pileCount.value;
+  const max = +maxStone.value;
+  const mode = initMode.value;
+
+  piles = [];
+  for (let i = 0; i < count; i++) {
+    piles.push(mode === "random"
+      ? Math.floor(Math.random() * max) + 1
+      : max
+    );
+  }
+}
+
+function resetGame() {
+  createPiles();
+  player = 1;
+  selected = null;
+  selectedPile = null;
+  document.getElementById("message").classList.remove("win");
+  document.getElementById("message").textContent = "プレイヤー1の番";
+  render();
+  updateStats();
+}
+
+function render() {
+  const area = document.getElementById("piles");
+  area.innerHTML = "";
+
+  piles.forEach((count, i) => {
+    const div = document.createElement("div");
+    div.className = "pile";
+
+    let stonesHTML = "";
+    for (let j = 0; j < count; j++) {
+      stonesHTML += `
+        <span class="stone ${i === selectedPile && j <= selected ? "selected" : ""}"
+          onpointerdown="startDrag(${i},${j})"
+          onpointermove="drag(${i},${j})"
+          onpointerup="endDrag(${i})">●</span>
+      `;
+    }
+
+    div.innerHTML = `
+      <h3>山 ${i + 1}</h3>
+      <div class="stones">${stonesHTML}</div>
+    `;
+
+    area.appendChild(div);
+  });
+}
+
+function startDrag(pile, index) {
+  dragging = true;
+  selectedPile = pile;
+  selected = index;
+  render();
+}
+
+function drag(pile, index) {
+  if (!dragging || pile !== selectedPile) return;
+  selected = index;
+  render();
+}
+
+function endDrag(pile) {
+  if (!dragging) return;
+  dragging = false;
+  takeStone(pile);
+}
+
+function takeStone(pile) {
+  const take = selected + 1;
+  document.getElementById("takeSound").play();
+
+  piles[pile] -= take;
+  selected = null;
+  selectedPile = null;
+
+  const misere = rule.value === "misere";
+  const end = piles.every(p => p === 0);
+
+  if (end) {
+    const winner = misere ? (player === 1 ? 2 : 1) : player;
+    finishGame(winner);
+    return;
+  }
+
+  if (mode.value === "cpu" && player === 1) {
+    player = 2;
+    render();
+    setTimeout(cpuMove, 600);
+  } else {
+    player = player === 1 ? 2 : 1;
+    document.getElementById("message").textContent = `プレイヤー${player}の番`;
+    render();
+  }
+}
+
+function finishGame(winner) {
+  document.getElementById("message").textContent =
+    `🎉 プレイヤー${winner}の勝ち！`;
+  document.getElementById("message").classList.add("win");
+  document.getElementById("winSound").play();
+
+  if (mode.value === "cpu") {
+    winner === 1 ? stats.win++ : stats.lose++;
+    localStorage.setItem("nimStats", JSON.stringify(stats));
+    updateStats();
+  }
+}
+
+function cpuMove() {
+  const hard = difficulty.value === "hard";
+  const misere = rule.value === "misere";
+
+  if (hard && misere) {
+    misereAI();
+  } else if (hard) {
+    normalAI();
+  } else {
+    randomAI();
+  }
+
+  document.getElementById("takeSound").play();
+
+  if (piles.every(p => p === 0)) {
+    finishGame(2);
+    return;
+  }
+
+  player = 1;
+  document.getElementById("message").textContent = "プレイヤー1の番";
+  render();
+}
+
+function randomAI() {
+  const i = piles.findIndex(p => p > 0);
+  piles[i]--;
+}
+
+function normalAI() {
+  let xor = piles.reduce((a, b) => a ^ b, 0);
+  if (xor === 0) return randomAI();
+
+  for (let i = 0; i < piles.length; i++) {
+    let t = piles[i] ^ xor;
+    if (t < piles[i]) {
+      piles[i] = t;
+      return;
+    }
+  }
+}
+
+function misereAI() {
+  const nonOne = piles.filter(p => p > 1).length;
+
+  if (nonOne === 0) {
+    const ones = piles.filter(p => p === 1).length;
+    const idx = piles.findIndex(p => p === 1);
+    piles[idx] = ones % 2 === 0 ? 0 : 1;
+    return;
+  }
+  normalAI();
+}
+
+resetGame();
+</script>
+<script>
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("service-worker.js");
+}
+</script>
+
+</body>
+</html>
