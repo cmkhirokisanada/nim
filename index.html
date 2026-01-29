@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<link rel="manifest" href="manifest.json">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Nim Game Ultimate</title>
@@ -15,14 +14,12 @@ body {
   text-align: center;
 }
 
-h1 { margin: 5px 0; }
-
 .controls {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   justify-content: center;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 select, button, input {
@@ -57,8 +54,12 @@ select, button, input {
   color: red;
 }
 
+.pending {
+  margin-top: 6px;
+}
+
 #message {
-  margin-top: 10px;
+  margin-top: 8px;
   font-size: 18px;
   font-weight: bold;
 }
@@ -74,7 +75,6 @@ select, button, input {
 
 #stats {
   font-size: 14px;
-  margin-top: 4px;
 }
 </style>
 </head>
@@ -112,6 +112,8 @@ select, button, input {
 
 <div class="piles" id="piles"></div>
 
+<div class="pending" id="pending"></div>
+
 <div id="message"></div>
 <div id="stats"></div>
 
@@ -121,95 +123,90 @@ select, button, input {
 <script>
 let piles = [];
 let player = 1;
-let selected = null;
 let selectedPile = null;
-let dragging = false;
+let selectedCount = null;
+let pendingMove = null;
 
 let stats = JSON.parse(localStorage.getItem("nimStats")) || { win: 0, lose: 0 };
 
 function updateStats() {
-  document.getElementById("stats").textContent =
-    `勝ち: ${stats.win} / 負け: ${stats.lose}`;
+  statsEl.textContent = `勝ち: ${stats.win} / 負け: ${stats.lose}`;
 }
 
 function createPiles() {
   const count = +pileCount.value;
   const max = +maxStone.value;
   const mode = initMode.value;
-
-  piles = [];
-  for (let i = 0; i < count; i++) {
-    piles.push(mode === "random"
-      ? Math.floor(Math.random() * max) + 1
-      : max
-    );
-  }
+  piles = Array.from({ length: count }, () =>
+    mode === "random" ? Math.floor(Math.random() * max) + 1 : max
+  );
 }
 
 function resetGame() {
   createPiles();
   player = 1;
-  selected = null;
+  pendingMove = null;
   selectedPile = null;
-  document.getElementById("message").classList.remove("win");
-  document.getElementById("message").textContent = "プレイヤー1の番";
+  selectedCount = null;
+  message.classList.remove("win");
+  message.textContent = "プレイヤー1の番";
   render();
   updateStats();
 }
 
 function render() {
-  const area = document.getElementById("piles");
-  area.innerHTML = "";
+  pilesEl.innerHTML = "";
 
   piles.forEach((count, i) => {
     const div = document.createElement("div");
     div.className = "pile";
 
-    let stonesHTML = "";
+    let stones = "";
     for (let j = 0; j < count; j++) {
-      stonesHTML += `
-        <span class="stone ${i === selectedPile && j <= selected ? "selected" : ""}"
-          onpointerdown="startDrag(${i},${j})"
-          onpointermove="drag(${i},${j})"
-          onpointerup="endDrag(${i})">●</span>
-      `;
+      const sel = i === selectedPile && j < selectedCount;
+      stones += `<span class="stone ${sel ? "selected" : ""}"
+        onpointerdown="selectStone(${i},${j + 1})">●</span>`;
     }
 
     div.innerHTML = `
       <h3>山 ${i + 1}</h3>
-      <div class="stones">${stonesHTML}</div>
+      <div class="stones">${stones}</div>
     `;
-
-    area.appendChild(div);
+    pilesEl.appendChild(div);
   });
+
+  pendingEl.innerHTML = pendingMove
+    ? `山${pendingMove.pile + 1}から ${pendingMove.count}個  
+       <button onclick="confirmMove()">✅ 確定</button>
+       <button onclick="cancelMove()">❌ キャンセル</button>`
+    : "";
 }
 
-function startDrag(pile, index) {
-  dragging = true;
+function selectStone(pile, count) {
   selectedPile = pile;
-  selected = index;
+  selectedCount = count;
+  pendingMove = { pile, count };
   render();
 }
 
-function drag(pile, index) {
-  if (!dragging || pile !== selectedPile) return;
-  selected = index;
-  render();
-}
-
-function endDrag(pile) {
-  if (!dragging) return;
-  dragging = false;
-  takeStone(pile);
-}
-
-function takeStone(pile) {
-  const take = selected + 1;
-  document.getElementById("takeSound").play();
-
-  piles[pile] -= take;
-  selected = null;
+function cancelMove() {
+  pendingMove = null;
   selectedPile = null;
+  selectedCount = null;
+  render();
+}
+
+function confirmMove() {
+  if (!pendingMove) return;
+  applyMove(pendingMove.pile, pendingMove.count);
+  pendingMove = null;
+}
+
+function applyMove(pile, count) {
+  takeSound.play();
+  piles[pile] -= count;
+  selectedPile = null;
+  selectedCount = null;
 
   const misere = rule.value === "misere";
   const end = piles.every(p => p === 0);
@@ -226,16 +223,15 @@ function takeStone(pile) {
     setTimeout(cpuMove, 600);
   } else {
     player = player === 1 ? 2 : 1;
-    document.getElementById("message").textContent = `プレイヤー${player}の番`;
+    message.textContent = `プレイヤー${player}の番`;
     render();
   }
 }
 
 function finishGame(winner) {
-  document.getElementById("message").textContent =
-    `🎉 プレイヤー${winner}の勝ち！`;
-  document.getElementById("message").classList.add("win");
-  document.getElementById("winSound").play();
+  message.textContent = `🎉 プレイヤー${winner}の勝ち！`;
+  message.classList.add("win");
+  winSound.play();
 
   if (mode.value === "cpu") {
     winner === 1 ? stats.win++ : stats.lose++;
@@ -245,18 +241,11 @@ function finishGame(winner) {
 }
 
 function cpuMove() {
-  const hard = difficulty.value === "hard";
-  const misere = rule.value === "misere";
+  difficulty.value === "hard"
+    ? (rule.value === "misere" ? misereAI() : normalAI())
+    : randomAI();
 
-  if (hard && misere) {
-    misereAI();
-  } else if (hard) {
-    normalAI();
-  } else {
-    randomAI();
-  }
-
-  document.getElementById("takeSound").play();
+  takeSound.play();
 
   if (piles.every(p => p === 0)) {
     finishGame(2);
@@ -264,7 +253,7 @@ function cpuMove() {
   }
 
   player = 1;
-  document.getElementById("message").textContent = "プレイヤー1の番";
+  message.textContent = "プレイヤー1の番";
   render();
 }
 
@@ -274,11 +263,11 @@ function randomAI() {
 }
 
 function normalAI() {
-  let xor = piles.reduce((a, b) => a ^ b, 0);
+  const xor = piles.reduce((a, b) => a ^ b, 0);
   if (xor === 0) return randomAI();
 
   for (let i = 0; i < piles.length; i++) {
-    let t = piles[i] ^ xor;
+    const t = piles[i] ^ xor;
     if (t < piles[i]) {
       piles[i] = t;
       return;
@@ -288,22 +277,20 @@ function normalAI() {
 
 function misereAI() {
   const nonOne = piles.filter(p => p > 1).length;
-
   if (nonOne === 0) {
-    const ones = piles.filter(p => p === 1).length;
     const idx = piles.findIndex(p => p === 1);
-    piles[idx] = ones % 2 === 0 ? 0 : 1;
+    piles[idx] = piles.filter(p => p === 1).length % 2 === 0 ? 0 : 1;
     return;
   }
   normalAI();
 }
 
+const pilesEl = document.getElementById("piles");
+const pendingEl = document.getElementById("pending");
+const message = document.getElementById("message");
+const statsEl = document.getElementById("stats");
+
 resetGame();
-</script>
-<script>
-if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("service-worker.js");
-}
 </script>
 
 </body>
