@@ -29,19 +29,25 @@ select, button, input {
 
 .piles {
   display: flex;
-  justify-content: center;
-  gap: 12px;
-  flex-wrap: wrap;
+  flex-direction: column; /* 山を縦に並べる */
+  gap: 10px;
+  align-items: center;
 }
 
 .pile {
   background: white;
   border-radius: 10px;
-  padding: 10px;
-  width: 130px;
+  padding: 8px 12px;
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .stones {
+  display: flex; /* 石は横並び */
+  gap: 4px;
   font-size: 22px;
   user-select: none;
 }
@@ -111,9 +117,7 @@ select, button, input {
 </div>
 
 <div class="piles" id="piles"></div>
-
 <div class="pending" id="pending"></div>
-
 <div id="message"></div>
 <div id="stats"></div>
 
@@ -136,9 +140,9 @@ function updateStats() {
 function createPiles() {
   const count = +pileCount.value;
   const max = +maxStone.value;
-  const mode = initMode.value;
+  const modeVal = initMode.value;
   piles = Array.from({ length: count }, () =>
-    mode === "random" ? Math.floor(Math.random() * max) + 1 : max
+    modeVal === "random" ? Math.floor(Math.random() * max) + 1 : max
   );
 }
 
@@ -163,15 +167,13 @@ function render() {
 
     let stones = "";
     for (let j = 0; j < count; j++) {
-      const sel = i === selectedPile && j < selectedCount;
-      stones += `<span class="stone ${sel ? "selected" : ""}"
+      const selected = i === selectedPile && j < selectedCount;
+      stones += `<span class="stone ${selected ? "selected" : ""}"
         onpointerdown="selectStone(${i},${j + 1})">●</span>`;
     }
 
-    div.innerHTML = `
-      <h3>山 ${i + 1}</h3>
-      <div class="stones">${stones}</div>
-    `;
+    div.innerHTML = `<strong>山${i + 1}</strong>
+                     <div class="stones">${stones}</div>`;
     pilesEl.appendChild(div);
   });
 
@@ -202,6 +204,7 @@ function confirmMove() {
   pendingMove = null;
 }
 
+// プレイヤーの手
 function applyMove(pile, count) {
   takeSound.play();
   piles[pile] -= count;
@@ -220,7 +223,7 @@ function applyMove(pile, count) {
   if (mode.value === "cpu" && player === 1) {
     player = 2;
     render();
-    setTimeout(cpuMove, 600);
+    setTimeout(cpuMove, 400);
   } else {
     player = player === 1 ? 2 : 1;
     message.textContent = `プレイヤー${player}の番`;
@@ -228,6 +231,7 @@ function applyMove(pile, count) {
   }
 }
 
+// ゲーム終了処理
 function finishGame(winner) {
   message.textContent = `🎉 プレイヤー${winner}の勝ち！`;
   message.classList.add("win");
@@ -240,15 +244,30 @@ function finishGame(winner) {
   }
 }
 
+// AIターン
 function cpuMove() {
-  difficulty.value === "hard"
-    ? (rule.value === "misere" ? misereAI() : normalAI())
-    : randomAI();
+  let move;
+  if (difficulty.value === "hard") {
+    move = rule.value === "misere" ? misereAI() : normalAI();
+  } else {
+    move = randomAI();
+  }
+  animateCpuMove(move.pile, move.count);
+}
 
-  takeSound.play();
+// AIアニメーション
+async function animateCpuMove(pile, count) {
+  for (let i = 0; i < count; i++) {
+    await new Promise(res => setTimeout(res, 200));
+    piles[pile]--;
+    takeSound.play();
+    render();
+  }
 
-  if (piles.every(p => p === 0)) {
-    finishGame(2);
+  const misere = rule.value === "misere";
+  const end = piles.every(p => p === 0);
+  if (end) {
+    finishGame(2); // CPU勝利
     return;
   }
 
@@ -257,9 +276,10 @@ function cpuMove() {
   render();
 }
 
+// AIロジック（返り値: {pile, count}）
 function randomAI() {
   const i = piles.findIndex(p => p > 0);
-  piles[i]--;
+  return { pile: i, count: 1 };
 }
 
 function normalAI() {
@@ -268,28 +288,35 @@ function normalAI() {
 
   for (let i = 0; i < piles.length; i++) {
     const t = piles[i] ^ xor;
-    if (t < piles[i]) {
-      piles[i] = t;
-      return;
-    }
+    if (t < piles[i]) return { pile: i, count: piles[i] - t };
   }
+  return randomAI();
 }
 
 function misereAI() {
   const nonOne = piles.filter(p => p > 1).length;
   if (nonOne === 0) {
     const idx = piles.findIndex(p => p === 1);
-    piles[idx] = piles.filter(p => p === 1).length % 2 === 0 ? 0 : 1;
-    return;
+    return { pile: idx, count: 1 };
   }
-  normalAI();
+  return normalAI();
 }
 
+// DOM参照
 const pilesEl = document.getElementById("piles");
 const pendingEl = document.getElementById("pending");
 const message = document.getElementById("message");
 const statsEl = document.getElementById("stats");
+const pileCount = document.getElementById("pileCount");
+const maxStone = document.getElementById("maxStone");
+const mode = document.getElementById("mode");
+const difficulty = document.getElementById("difficulty");
+const rule = document.getElementById("rule");
+const initMode = document.getElementById("initMode");
+const takeSound = document.getElementById("takeSound");
+const winSound = document.getElementById("winSound");
 
+// 初期化
 resetGame();
 </script>
 
